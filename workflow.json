@@ -344,6 +344,7 @@
     },
     {
       "parameters": {
+        "resource": "message",
         "operation": "sendAndWait",
         "sendTo": "support-lead@company.example",
         "subject": "=[Approval needed] {{ $('Priority Scorer').item.json.priority_level }} ticket from {{ $('Priority Scorer').item.json.customer_name }}",
