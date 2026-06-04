@@ -1,0 +1,17 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Secrets / local n8n data — never commit credentials
+.env
+.env.*
+.n8n/
+*.key
+credentials.json

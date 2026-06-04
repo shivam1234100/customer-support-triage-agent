@@ -1,0 +1,9 @@
+{
+  "_comment": "Realistic Form Trigger submission. Field keys match the form field labels in workflow.json. This is what the 'Support Ticket Form' node outputs.",
+  "Customer Name": "Priya Sharma",
+  "Customer Email": "priya.sharma@example.com",
+  "Ticket Message": "I was charged twice for my subscription this month and I need a refund urgently. This is unacceptable, please fix this ASAP. My invoice number is INV-48213.",
+  "Product Area": "Billing & Payments",
+  "submittedAt": "2026-06-04T10:15:00.000Z",
+  "formMode": "production"
+}

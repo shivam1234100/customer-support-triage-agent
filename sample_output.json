@@ -1,0 +1,65 @@
+{
+  "_comment": "End-to-end result for sample_input.json. Shows each agentic stage's output and the final actions. Priority numbers are produced by priority_scorer.js (verified: 87 / High).",
+
+  "classifier_ai_output": {
+    "category": "Billing",
+    "sentiment": "negative"
+  },
+
+  "extractor_ai_output": {
+    "summary": "The customer was charged twice for their subscription this month and is requesting a refund for the duplicate charge.",
+    "issue_keywords": ["double charge", "refund", "subscription", "invoice inv-48213"],
+    "customer_intent": "Wants an urgent refund for the duplicate subscription charge."
+  },
+
+  "priority_scorer_output": {
+    "ticket_id": "TKT-1749031200000",
+    "customer_name": "Priya Sharma",
+    "customer_email": "priya.sharma@example.com",
+    "product_area": "Billing & Payments",
+    "category": "Billing",
+    "sentiment": "negative",
+    "summary": "The customer was charged twice for their subscription this month and is requesting a refund for the duplicate charge.",
+    "issue_keywords": ["double charge", "refund", "subscription", "invoice inv-48213"],
+    "customer_intent": "Wants an urgent refund for the duplicate subscription charge.",
+    "urgency_hits": 4,
+    "priority_score": 87,
+    "priority_level": "High",
+    "team_label": "Billing Team",
+    "team_email": "billing@company.example",
+    "received_at": "2026-06-04T10:15:01.000Z"
+  },
+
+  "routing_decision": {
+    "switch_branch": "Billing",
+    "routed_to": "Billing Team"
+  },
+
+  "escalation_decision": {
+    "rule": "priority_level == 'High' OR sentiment == 'negative'",
+    "needs_human_review": true,
+    "human_in_the_loop": "Approval email sent to support-lead@company.example; workflow paused until Approve is clicked.",
+    "approved_by_human": true
+  },
+
+  "response_writer_ai_output": {
+    "email_subject": "We received your support request (Billing) - TKT-1749031200000",
+    "email_body": "Hi Priya,\n\nThank you for reaching out, and I'm sorry for the frustration this duplicate charge has caused. I can confirm we've received your request about being charged twice for your subscription this month, along with invoice INV-48213.\n\nOur Billing Team is now looking into this and will review the duplicate charge for you. Because this is a high-priority issue, you can expect a personal update from us within the next few hours. We won't take any further payment action on this until it's resolved.\n\nThanks for your patience, and we'll be in touch very soon.\n\nThe Support Team"
+  },
+
+  "actions_taken": {
+    "email_sent_to_customer": "priya.sharma@example.com",
+    "google_sheets_row_appended": {
+      "Timestamp": "2026-06-04T10:15:01.000Z",
+      "Ticket ID": "TKT-1749031200000",
+      "Name": "Priya Sharma",
+      "Email": "priya.sharma@example.com",
+      "Category": "Billing",
+      "Sentiment": "negative",
+      "Priority Level": "High",
+      "Priority Score": 87,
+      "Team": "Billing Team",
+      "Summary": "The customer was charged twice for their subscription this month and is requesting a refund for the duplicate charge."
+    }
+  }
+}

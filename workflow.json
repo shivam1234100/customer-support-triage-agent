@@ -1,0 +1,572 @@
+{
+  "name": "Customer Support Ticket Triage & Routing Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Customer Support Ticket",
+        "formDescription": "Submit your support request and our team will get back to you shortly.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Customer Name",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Customer Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Ticket Message",
+              "fieldType": "textarea",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Product Area",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  { "option": "Billing & Payments" },
+                  { "option": "Technical / Bug" },
+                  { "option": "Account & Login" },
+                  { "option": "Other" }
+                ]
+              },
+              "requiredField": false
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "11111111-1111-4111-8111-111111111111",
+      "name": "Support Ticket Form",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [-160, 300],
+      "webhookId": "support-ticket-webhook",
+      "notes": "INPUT (tool use): public web form. Collects name, email, ticket message, optional product area. This is the entry trigger of the workflow."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "cond-haswmsg",
+              "leftValue": "={{ $json['Ticket Message'] }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "22222222-2222-4222-8222-222222222222",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [60, 300],
+      "notes": "DETERMINISTIC fallback gate. TRUE = message present -> continue. FALSE = missing message -> safe fallback path (workflow does not break)."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": false,
+        "assignments": {
+          "assignments": [
+            { "id": "fb-1", "name": "status", "value": "rejected", "type": "string" },
+            { "id": "fb-2", "name": "reason", "value": "No ticket message was provided.", "type": "string" },
+            { "id": "fb-3", "name": "next_action", "value": "Ask the customer to resubmit the form including a description of their issue.", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "33333333-3333-4333-8333-333333333333",
+      "name": "Fallback: Missing Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [280, 520],
+      "notes": "FALLBACK / ERROR HANDLING for missing input. Produces a clean rejection record instead of crashing the run."
+    },
+    {
+      "parameters": {
+        "model": { "__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "gpt-4o-mini" },
+        "options": { "temperature": 0 }
+      },
+      "id": "aaaaaaaa-0001-4001-8001-aaaaaaaaaaaa",
+      "name": "OpenAI Model (Classifier)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [300, 520],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_OPENAI_CRED_ID", "name": "OpenAI account (add me)" }
+      },
+      "notes": "LLM brain for the Classifier agent. temperature 0 for stable, repeatable labels."
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"category\": \"Billing\",\n  \"sentiment\": \"negative\"\n}"
+      },
+      "id": "bbbbbbbb-0001-4001-8001-bbbbbbbbbbbb",
+      "name": "Classifier Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [460, 520],
+      "notes": "STRUCTURED OUTPUT. Forces the Classifier to return strict JSON: { category, sentiment }."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a SUPPORT TICKET CLASSIFIER agent.\nClassify the ticket below.\n\nRules:\n- category MUST be exactly one of: Billing, Technical, Account, General.\n- sentiment MUST be exactly one of: positive, neutral, negative.\n- Use the product-area hint only as a weak signal; the message text wins.\n- Return ONLY the JSON described by the format instructions. No prose.\n\nProduct area hint: {{ $('Support Ticket Form').item.json['Product Area'] || 'none' }}\n\nTicket message:\n\"\"\"\n{{ $('Support Ticket Form').item.json['Ticket Message'] }}\n\"\"\"",
+        "hasOutputParser": true
+      },
+      "id": "44444444-4444-4444-8444-444444444444",
+      "name": "Classifier (AI)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [380, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "AI ROLE #1 - CLASSIFIER. Decides category + sentiment. On failure: retries, then continues so the Priority Scorer can apply safe defaults."
+    },
+    {
+      "parameters": {
+        "model": { "__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "gpt-4o-mini" },
+        "options": { "temperature": 0 }
+      },
+      "id": "aaaaaaaa-0002-4002-8002-aaaaaaaaaaaa",
+      "name": "OpenAI Model (Extractor)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [620, 520],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_OPENAI_CRED_ID", "name": "OpenAI account (add me)" }
+      },
+      "notes": "LLM brain for the Extractor agent."
+    },
+    {
+      "parameters": {
+        "schemaType": "fromJson",
+        "jsonSchemaExample": "{\n  \"summary\": \"One or two sentence summary of the problem.\",\n  \"issue_keywords\": [\"refund\", \"double charge\"],\n  \"customer_intent\": \"Wants a refund for a duplicate charge.\"\n}"
+      },
+      "id": "bbbbbbbb-0002-4002-8002-bbbbbbbbbbbb",
+      "name": "Extractor Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [780, 520],
+      "notes": "STRUCTURED OUTPUT. Forces { summary, issue_keywords[], customer_intent }."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a SUPPORT TICKET EXTRACTOR agent.\nFrom the ticket message, extract structured details.\n\nRules:\n- summary: 1-2 neutral sentences, no opinions.\n- issue_keywords: 2-6 short lowercase keywords/phrases pulled from the message.\n- customer_intent: one sentence describing what the customer wants to happen.\n- Return ONLY the JSON described by the format instructions.\n\nTicket message:\n\"\"\"\n{{ $('Support Ticket Form').item.json['Ticket Message'] }}\n\"\"\"",
+        "hasOutputParser": true
+      },
+      "id": "55555555-5555-4555-8555-555555555555",
+      "name": "Extractor (AI)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [700, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "AI ROLE #2 - EXTRACTOR. Pulls summary, keywords, and intent. On failure: retries, then continues with safe defaults downstream."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// ---------------------------------------------------------------------------\n// DETERMINISTIC NODE - Priority Scorer + record consolidation\n// Pure rules, no AI. Same logic as /priority_scorer.js in the repo.\n// Reads the form + the two AI nodes, applies safe defaults if AI failed,\n// computes a 0-100 priority score, and emits ONE clean ticket record that\n// every downstream node reads from.\n// ---------------------------------------------------------------------------\n\n// --- 1. Gather inputs (with fallbacks so a failed AI call never breaks us) ---\nconst form = $('Support Ticket Form').item.json;\n\nconst clf = ($('Classifier (AI)').item.json && $('Classifier (AI)').item.json.output) || {};\nconst ext = ($('Extractor (AI)').item.json && $('Extractor (AI)').item.json.output) || {};\n\nconst customer_name = form['Customer Name'] || 'Customer';\nconst customer_email = form['Customer Email'] || '';\nconst message = form['Ticket Message'] || '';\n\n// --- 2. Normalise AI output to known enums (defensive defaults) -------------\nconst ALLOWED_CATEGORIES = ['Billing', 'Technical', 'Account', 'General'];\nconst ALLOWED_SENTIMENT = ['positive', 'neutral', 'negative'];\n\nlet category = String(clf.category || 'General').trim();\ncategory = ALLOWED_CATEGORIES.find(c => c.toLowerCase() === category.toLowerCase()) || 'General';\n\nlet sentiment = String(clf.sentiment || 'neutral').trim().toLowerCase();\nif (!ALLOWED_SENTIMENT.includes(sentiment)) sentiment = 'neutral';\n\nconst summary = ext.summary || 'No summary available.';\nconst issue_keywords = Array.isArray(ext.issue_keywords) ? ext.issue_keywords : [];\nconst customer_intent = ext.customer_intent || 'Not specified.';\n\n// --- 3. Deterministic priority score ---------------------------------------\nconst CATEGORY_WEIGHT = { Billing: 30, Technical: 30, Account: 20, General: 10 };\nconst SENTIMENT_BOOST = { negative: 25, neutral: 5, positive: 0 };\nconst URGENCY_KEYWORDS = ['urgent','asap','immediately','down','outage','broken','refund','cancel','charged','unauthorized','not working','can\\'t log','cannot log','error','failed','escalate'];\n\nconst text = (message + ' ' + issue_keywords.join(' ')).toLowerCase();\nlet urgencyHits = 0;\nfor (const kw of URGENCY_KEYWORDS) { if (text.includes(kw)) urgencyHits++; }\nconst urgencyScore = Math.min(urgencyHits * 8, 40); // cap urgency contribution\n\nlet priority_score = (CATEGORY_WEIGHT[category] || 10) + (SENTIMENT_BOOST[sentiment] || 0) + urgencyScore;\npriority_score = Math.max(0, Math.min(100, priority_score));\n\nlet priority_level = 'Low';\nif (priority_score >= 70) priority_level = 'High';\nelse if (priority_score >= 40) priority_level = 'Medium';\n\n// --- 4. Deterministic team routing map (canonical source of truth) ----------\nconst TEAM_MAP = {\n  Billing:   { team_label: 'Billing Team',  team_email: 'billing@company.example' },\n  Technical: { team_label: 'Tech Team',     team_email: 'tech@company.example' },\n  Account:   { team_label: 'Account Team',  team_email: 'accounts@company.example' },\n  General:   { team_label: 'General Queue',  team_email: 'support@company.example' }\n};\nconst team = TEAM_MAP[category];\n\n// --- 5. Emit ONE consolidated ticket record --------------------------------\nconst ticket_id = 'TKT-' + Date.now();\n\nreturn {\n  json: {\n    ticket_id,\n    customer_name,\n    customer_email,\n    message,\n    product_area: form['Product Area'] || 'Other',\n    category,\n    sentiment,\n    summary,\n    issue_keywords,\n    customer_intent,\n    urgency_hits: urgencyHits,\n    priority_score,\n    priority_level,\n    team_label: team.team_label,\n    team_email: team.team_email,\n    received_at: new Date().toISOString()\n  }\n};"
+      },
+      "id": "66666666-6666-4666-8666-666666666666",
+      "name": "Priority Scorer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [940, 300],
+      "notes": "DETERMINISTIC. Computes priority_score (0-100) and priority_level (High/Medium/Low) from category + sentiment + urgency keywords. Also applies AI fallbacks and builds the single ticket record used downstream."
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "typeValidation": "loose" },
+                "conditions": [
+                  { "id": "sw-bill", "leftValue": "={{ $json.category }}", "rightValue": "Billing", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Billing"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "typeValidation": "loose" },
+                "conditions": [
+                  { "id": "sw-tech", "leftValue": "={{ $json.category }}", "rightValue": "Technical", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Technical"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "typeValidation": "loose" },
+                "conditions": [
+                  { "id": "sw-acct", "leftValue": "={{ $json.category }}", "rightValue": "Account", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Account"
+            },
+            {
+              "conditions": {
+                "options": { "caseSensitive": false, "typeValidation": "loose" },
+                "conditions": [
+                  { "id": "sw-gen", "leftValue": "={{ $json.category }}", "rightValue": "General", "operator": { "type": "string", "operation": "equals" } }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "General"
+            }
+          ]
+        },
+        "options": { "fallbackOutput": "none" }
+      },
+      "id": "77777777-7777-4777-8777-777777777777",
+      "name": "Route by Category",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [1160, 300],
+      "notes": "DETERMINISTIC ROUTING. Sends the ticket down the branch matching its category -> the right team."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            { "id": "t-bill", "name": "routed_to", "value": "Billing Team", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88888888-0001-4001-8001-888888888888",
+      "name": "Billing Team",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 60],
+      "notes": "Billing branch label. Canonical team data lives on the Priority Scorer record."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            { "id": "t-tech", "name": "routed_to", "value": "Tech Team", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88888888-0002-4002-8002-888888888888",
+      "name": "Tech Team",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 220],
+      "notes": "Technical branch label."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            { "id": "t-acct", "name": "routed_to", "value": "Account Team", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88888888-0003-4003-8003-888888888888",
+      "name": "Account Team",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 380],
+      "notes": "Account branch label."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            { "id": "t-gen", "name": "routed_to", "value": "General Queue", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "88888888-0004-4004-8004-888888888888",
+      "name": "General Queue",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1400, 540],
+      "notes": "General branch label."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "typeValidation": "loose" },
+          "conditions": [
+            { "id": "esc-prio", "leftValue": "={{ $json.priority_level }}", "rightValue": "High", "operator": { "type": "string", "operation": "equals" } },
+            { "id": "esc-sent", "leftValue": "={{ $json.sentiment }}", "rightValue": "negative", "operator": { "type": "string", "operation": "equals" } }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "99999999-9999-4999-8999-999999999999",
+      "name": "Escalation Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1640, 300],
+      "notes": "DETERMINISTIC. TRUE if priority is High OR sentiment is negative -> human review. FALSE -> straight to auto-acknowledgement."
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "sendTo": "support-lead@company.example",
+        "subject": "=[Approval needed] {{ $('Priority Scorer').item.json.priority_level }} ticket from {{ $('Priority Scorer').item.json.customer_name }}",
+        "message": "=A high-priority or negative-sentiment ticket needs a human check before the auto-reply is sent.\n\nCustomer: {{ $('Priority Scorer').item.json.customer_name }} <{{ $('Priority Scorer').item.json.customer_email }}>\nCategory: {{ $('Priority Scorer').item.json.category }}  |  Team: {{ $('Priority Scorer').item.json.team_label }}\nPriority: {{ $('Priority Scorer').item.json.priority_level }} ({{ $('Priority Scorer').item.json.priority_score }}/100)\nSentiment: {{ $('Priority Scorer').item.json.sentiment }}\n\nSummary: {{ $('Priority Scorer').item.json.summary }}\nCustomer intent: {{ $('Priority Scorer').item.json.customer_intent }}\n\nApprove to release the auto-acknowledgement to the customer.",
+        "responseType": "approval",
+        "approvalOptions": { "values": { "approvalType": "double" } },
+        "options": {}
+      },
+      "id": "aaaa1111-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "name": "Human Approval",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [1860, 160],
+      "webhookId": "human-approval-webhook",
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_GMAIL_CRED_ID", "name": "Gmail account (add me)" }
+      },
+      "notes": "HUMAN-IN-THE-LOOP (Send and Wait for Approval). Pauses the run and emails a support lead Approve/Disapprove buttons for risky/high-priority tickets."
+    },
+    {
+      "parameters": {
+        "model": { "__rl": true, "value": "gpt-4o-mini", "mode": "list", "cachedResultName": "gpt-4o-mini" },
+        "options": { "temperature": 0.4 }
+      },
+      "id": "aaaaaaaa-0003-4003-8003-aaaaaaaaaaaa",
+      "name": "OpenAI Model (Response Writer)",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [2080, 520],
+      "credentials": {
+        "openAiApi": { "id": "REPLACE_OPENAI_CRED_ID", "name": "OpenAI account (add me)" }
+      },
+      "notes": "LLM brain for the Response Writer. Slightly higher temperature for natural, warm wording."
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a CUSTOMER SUPPORT RESPONSE WRITER agent.\nWrite a short, warm acknowledgement email body in plain text (4-7 sentences).\n\nContext (do not invent anything beyond this):\n- Customer name: {{ $('Priority Scorer').item.json.customer_name }}\n- Issue summary: {{ $('Priority Scorer').item.json.summary }}\n- Category: {{ $('Priority Scorer').item.json.category }} (handled by {{ $('Priority Scorer').item.json.team_label }})\n- Priority level: {{ $('Priority Scorer').item.json.priority_level }}\n\nGuidelines:\n- Greet the customer by name.\n- Confirm we received the request and briefly restate the issue.\n- Say which team is handling it and give a realistic next step (High = within a few hours, Medium = within 1 business day, Low = within 2-3 business days).\n- Be empathetic if the issue is frustrating. Do not promise refunds or specific outcomes.\n- Sign off as 'The Support Team'.\n- Output ONLY the email body text.",
+        "hasOutputParser": false
+      },
+      "id": "bbbb1111-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "name": "Response Writer (AI)",
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.5,
+      "position": [2300, 300],
+      "onError": "continueRegularOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000,
+      "alwaysOutputData": true,
+      "notes": "AI ROLE #3 - RESPONSE WRITER. Drafts the personalised acknowledgement email body. Output is at {{ $json.text }}."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Priority Scorer').item.json.customer_email }}",
+        "subject": "=We received your support request ({{ $('Priority Scorer').item.json.category }}) - {{ $('Priority Scorer').item.json.ticket_id }}",
+        "message": "={{ $('Response Writer (AI)').item.json.text || ('Hi ' + $('Priority Scorer').item.json.customer_name + ',\\n\\nThanks for contacting support. We have received your request and our ' + $('Priority Scorer').item.json.team_label + ' will get back to you shortly.\\n\\nThe Support Team') }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "cccc1111-cccc-4ccc-8ccc-cccccccccccc",
+      "name": "Send Acknowledgement",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2520, 300],
+      "webhookId": "send-ack-webhook",
+      "credentials": {
+        "gmailOAuth2": { "id": "REPLACE_GMAIL_CRED_ID", "name": "Gmail account (add me)" }
+      },
+      "notes": "TOOL USE (email). Sends the AI-drafted acknowledgement to the customer. Includes a hard-coded fallback body if the AI step returned nothing."
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "REPLACE_GOOGLE_SHEET_ID", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "gid=0", "mode": "list", "cachedResultName": "Tickets" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Timestamp": "={{ $('Priority Scorer').item.json.received_at }}",
+            "Ticket ID": "={{ $('Priority Scorer').item.json.ticket_id }}",
+            "Name": "={{ $('Priority Scorer').item.json.customer_name }}",
+            "Email": "={{ $('Priority Scorer').item.json.customer_email }}",
+            "Category": "={{ $('Priority Scorer').item.json.category }}",
+            "Sentiment": "={{ $('Priority Scorer').item.json.sentiment }}",
+            "Priority Level": "={{ $('Priority Scorer').item.json.priority_level }}",
+            "Priority Score": "={{ $('Priority Scorer').item.json.priority_score }}",
+            "Team": "={{ $('Priority Scorer').item.json.team_label }}",
+            "Summary": "={{ $('Priority Scorer').item.json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            { "id": "Timestamp", "displayName": "Timestamp", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Ticket ID", "displayName": "Ticket ID", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Name", "displayName": "Name", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Email", "displayName": "Email", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Category", "displayName": "Category", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Sentiment", "displayName": "Sentiment", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Priority Level", "displayName": "Priority Level", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Priority Score", "displayName": "Priority Score", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Team", "displayName": "Team", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true },
+            { "id": "Summary", "displayName": "Summary", "required": false, "defaultMatch": false, "display": true, "type": "string", "canBeUsedToMatch": true }
+          ]
+        },
+        "options": {}
+      },
+      "id": "dddd1111-dddd-4ddd-8ddd-dddddddddddd",
+      "name": "Log to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2740, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": { "id": "REPLACE_GSHEETS_CRED_ID", "name": "Google Sheets account (add me)" }
+      },
+      "notes": "TOOL USE (database/log). Appends one row per ticket: name, email, category, priority, team, timestamp. This is the durable ticket record."
+    }
+  ],
+  "connections": {
+    "Support Ticket Form": {
+      "main": [
+        [ { "node": "Validate Input", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [ { "node": "Classifier (AI)", "type": "main", "index": 0 } ],
+        [ { "node": "Fallback: Missing Message", "type": "main", "index": 0 } ]
+      ]
+    },
+    "OpenAI Model (Classifier)": {
+      "ai_languageModel": [
+        [ { "node": "Classifier (AI)", "type": "ai_languageModel", "index": 0 } ]
+      ]
+    },
+    "Classifier Output Parser": {
+      "ai_outputParser": [
+        [ { "node": "Classifier (AI)", "type": "ai_outputParser", "index": 0 } ]
+      ]
+    },
+    "Classifier (AI)": {
+      "main": [
+        [ { "node": "Extractor (AI)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "OpenAI Model (Extractor)": {
+      "ai_languageModel": [
+        [ { "node": "Extractor (AI)", "type": "ai_languageModel", "index": 0 } ]
+      ]
+    },
+    "Extractor Output Parser": {
+      "ai_outputParser": [
+        [ { "node": "Extractor (AI)", "type": "ai_outputParser", "index": 0 } ]
+      ]
+    },
+    "Extractor (AI)": {
+      "main": [
+        [ { "node": "Priority Scorer", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Priority Scorer": {
+      "main": [
+        [ { "node": "Route by Category", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Route by Category": {
+      "main": [
+        [ { "node": "Billing Team", "type": "main", "index": 0 } ],
+        [ { "node": "Tech Team", "type": "main", "index": 0 } ],
+        [ { "node": "Account Team", "type": "main", "index": 0 } ],
+        [ { "node": "General Queue", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Billing Team": {
+      "main": [
+        [ { "node": "Escalation Check", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Tech Team": {
+      "main": [
+        [ { "node": "Escalation Check", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Account Team": {
+      "main": [
+        [ { "node": "Escalation Check", "type": "main", "index": 0 } ]
+      ]
+    },
+    "General Queue": {
+      "main": [
+        [ { "node": "Escalation Check", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Escalation Check": {
+      "main": [
+        [ { "node": "Human Approval", "type": "main", "index": 0 } ],
+        [ { "node": "Response Writer (AI)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Human Approval": {
+      "main": [
+        [ { "node": "Response Writer (AI)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "OpenAI Model (Response Writer)": {
+      "ai_languageModel": [
+        [ { "node": "Response Writer (AI)", "type": "ai_languageModel", "index": 0 } ]
+      ]
+    },
+    "Response Writer (AI)": {
+      "main": [
+        [ { "node": "Send Acknowledgement", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Send Acknowledgement": {
+      "main": [
+        [ { "node": "Log to Google Sheets", "type": "main", "index": 0 } ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "pinData": {},
+  "meta": {},
+  "tags": []
+}
