@@ -280,7 +280,7 @@ This is **my own, fully individual submission.** I designed and built the entire
 - **Human-in-the-loop** — the Gmail Send-and-Wait approval for risky tickets.
 - **Integrations & resilience** — Gmail send, Google Sheets logging, and the fallback/retry strategy so AI failures degrade gracefully instead of crashing.
 
-*Submitted by:* **[Your Name]**, Roll No: **[Your Roll No]** — BITS Pilani.
+*Submitted by:* **Shivam Tiwari**, Roll No: **23BCS10104** — BITS Pilani.
 
 ---
 
